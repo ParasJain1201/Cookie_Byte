@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Recorder</title>
+    <style>
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            outline: none;
+            color: #fff;
+            background-color: #4CAF50;
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 9px #999;
+        }
+
+        .button:hover {background-color: #3e8e41}
+
+        .button:active {
+            background-color: #3e8e41;
+            box-shadow: 0 5px #666;
+            transform: translateY(4px);
+        }
+
+        .button.disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .recording {
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        .recording-indicator {
+            display: none;
+            font-size: 20px;
+            color: red;
+        }
+
+        .recording-indicator.recording {
+            display: block;
+        }
+
+        .transcription {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Record Audio</h1>
+    <button id="recordButton" class="button">Record</button>
+    <button id="stopButton" class="button disabled" disabled>Stop</button>
+    <div id="recordingIndicator" class="recording-indicator">Recording...</div>
+
+    <div id="recordingsList">
+        {% for audio_filename, transcription in transcriptions %}
+            <div class="transcription">
+                <audio controls src="{{ url_for('static', filename=audio_filename) }}"></audio>
+                <p>{{ transcription }}</p>
+            </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+
+        const recordButton = document.getElementById('recordButton');
+        const stopButton = document.getElementById('stopButton');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        const recordingsList = document.getElementById('recordingsList');
+
+        recordButton.addEventListener('click', async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio_data', audioBlob);
+
+                const response = await fetch('/save_audio', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audioElement = document.createElement('audio');
+                    audioElement.controls = true;
+                    audioElement.src = audioUrl;
+
+                    const transcriptionElement = document.createElement('p');
+                    transcriptionElement.textContent = result.transcription;
+
+                    const transcriptionDiv = document.createElement('div');
+                    transcriptionDiv.classList.add('transcription');
+                    transcriptionDiv.appendChild(audioElement);
+                    transcriptionDiv.appendChild(transcriptionElement);
+
+                    recordingsList.appendChild(transcriptionDiv);
+                }
+
+                audioChunks = [];
+                stopButton.disabled = true;
+                stopButton.classList.add('disabled');
+                recordButton.disabled = false;
+                recordButton.classList.remove('disabled');
+                recordingIndicator.classList.remove('recording');
+            };
+
+            mediaRecorder.start();
+            recordButton.disabled = true;
+            recordButton.classList.add('disabled');
+            stopButton.disabled = false;
+            stopButton.classList.remove('disabled');
+            recordingIndicator.classList.add('recording');
+        });
+
+        stopButton.addEventListener('click', () => {
+            mediaRecorder.stop();
+        });
+    </script>
+</body>
+</html>
